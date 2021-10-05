@@ -32,4 +32,8 @@ export default class JSSoupAdapter {
   name(domElement) {
     return domElement.name
   }
+  
+  isValidElement(domElement) {
+    return domElement.constructor.name == "SoupTag"
+  }
 }

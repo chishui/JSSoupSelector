@@ -1,5 +1,5 @@
 import Combinator from './combinator';
-const DESCENDANT_STATE = 0;
+import UnsupportedException from './unsupported_exception';
 
 export default class Selector {
   
@@ -49,8 +49,7 @@ export default class Selector {
           pivotLetter = expression[idx]
       } else if (c == ']' || c == ')') {
           pivotLetter = 0;
-      } else if (c.match(/\s/) && expression[idx+1].match(/[a-zA-Z]/)) { 
-          
+      } else if (c.match(/\s/) && expression[idx+1].match(/[a-zA-Z#.\[:]/)) { 
           if (pivotLetter == 0) {
             candidates = this.combinatorSlice(expression.slice(start, idx), expression[idx], candidates)
             pivotLetter = expression[idx];
@@ -68,6 +67,7 @@ export default class Selector {
   }
 
   combinatorSlice(expr, letter, candidates) {
+    console.log("combinatorSlice:", expr, letter)
     expr = expr.trim()
     var selected = []
     candidates.forEach(c => {
@@ -89,9 +89,10 @@ export default class Selector {
         candidates = this.combinator.descendant(selected);
         break;
       default:
+        candidates = selected;
         break;
     }
-    console.log(selected.length, candidates.length)
+    console.log("selected:", selected.length, "candidates:", candidates.length)
     return candidates 
   }
 
@@ -109,7 +110,6 @@ class SimpleSelector {
   }
 
   match(expression, element) {
-    console.log("simpleSleector", expression) 
     var expressions = this.atomExpressionSplit(expression);
     console.log(expressions)
     var candidates = []
@@ -133,13 +133,12 @@ class SimpleSelector {
     for (var i = 0; i < expression.length; ++i) {
       var c = expression.charAt(i)
       if (c == '*') {//universal selector
-        // as we expand in Selector, we don't consider universal selector here
-        //expressions.push("*");
+        expressions.push(new UniversalSelector(this.adapter, expr));
       } else if (c.match(/[a-zA-Z]/g)) {
         var expr = this.getNext(expression, i)
         expressions.push(new TypeSelector(this.adapter, expr))
         i = i + expr.length - 1
-      } else if (c == '[') {//beginning of atrribute selector
+      } else if (c == '[') {// beginning of atrribute selector
         var end = expression.indexOf("]", i);
         expressions.push(new AttributeSelector(this.adapter, expression.slice(i, end + 1)));
         i = end;
@@ -182,12 +181,23 @@ class AtomSelector {
   }
 } 
 
+class UniversalSelector extends AtomSelector {
+  constructor(adapter, expression) {
+    super(adapter, expression)
+  }
+
+  match(element) {
+    return this.adapter.isValidElement(element)
+  }
+} 
+
 class TypeSelector extends AtomSelector {
   constructor(adapter, expression) {
     super(adapter, expression)
   }
  
   match(element) {
+    if (!this.adapter.isValidElement(element)) return false;
     return this.expression == this.adapter.name(element);
   }
 }
@@ -195,10 +205,39 @@ class TypeSelector extends AtomSelector {
 class AttributeSelector extends AtomSelector {
   constructor(adapter, expression) {
     super(adapter, expression)
+    this.attr = null
+    this.val = null
+    this.processExpression(expression)
+  }
+
+  processExpression(expression) {
+    var idx = expression.indexOf('[');
+    expression = expression.slice(idx + 1)
+    idx = expression.lastIndexOf(']');
+    expression = expression.slice(0, idx)
+    idx = expression.indexOf("=")
+    if (idx > 0 && expression[idx - 1].match(/\w/) == null) {
+      throw new UnsupportedException(expression.slice(idx - 1, idx + 1) + " is not supported")
+    }
+    if (idx < 0) { // [attr]
+      this.attr = expression
+    } else {
+      this.attr = expression.slice(0, idx)
+      this.val = expression.slice(idx + 1).replace(/\"/g, "")
+    }
+    this.expression = expression
   }
 
   match(element) {
-    //return expression == adapter.name(element);
+    if (!this.adapter.isValidElement(element)) return false;
+    if (this.val == null) {
+      var attrs = this.adapter.attributes(element);
+      if (!attrs) return false
+      return this.attr in attrs
+    }
+    var attrs = this.adapter.attributes(element);
+    if (!(this.attr in attrs)) return false;
+    return attrs[this.attr] == this.val
   }
 
 }
@@ -215,7 +254,9 @@ class ClassSelector extends AtomSelector {
   }
 
   match(element) {
+    if (!this.adapter.isValidElement(element)) return false;
     var c = this.adapter.attributes(element).class;
+    if (!c) return false;
     var classes = c.split(" ")
     return classes.indexOf(this.expression) >= 0;
   }
@@ -234,6 +275,8 @@ class IDSelector extends AtomSelector {
   }
 
   match(element) {
+    if (!this.adapter.isValidElement(element)) return false;
+    //TODO: ID validation
     return this.expression == this.adapter.attributes(element).id;
   }
 
@@ -245,6 +288,7 @@ class PseudoClassSelector extends AtomSelector {
   }
 
   match(element) {
+    if (!this.adapter.isValidElement(element)) return false;
     //return expression == adapter.name(element);
   }
 
