@@ -1,6 +1,6 @@
 const assert = require('assert');
 import SoupSelector from '../src/selector';
-import JSSoupAdapter from '../src/adapters/jssoup_adapter';
+import JSSoupAdapter from '../src/dom_adapters/jssoup_adapter';
 var JSSoup = require('jssoup').default;
 
 const data = `
@@ -17,10 +17,11 @@ const data = `
 
   <p class="story">...</p>
 
-  <span class="one" id="id1">One</span>
-  <span class="two" id="id2">Two</span>
-  <span class="three" id="id3" title2="title">Three</span>
-  <span class="one two three" id="id4">One Two Three</span>
+  <span class="one four" id="id1">One</span>
+  ...
+  <span class="two four" id="id2">Two</span>
+  <span class="three four" id="id3" title2="title">Three</span>
+  <span class="one two three four" id="id4">One Two Three</span>
 
   <div class=" whitespace">Whitespace Left</div>
   <div class="whitespace ">Whitespace Right</div>
@@ -216,11 +217,53 @@ describe('should work well for selector', function() {
       assert.equal("One", b[0].text);
     });
 
-    it('should be OK with descendant combinator', function() {
+    it('should be OK with descendant combinator #2', function() {
       var ss = new SoupSelector(new JSSoupAdapter());
       var soup = new JSSoup(data);
       var b = ss.select("body span #id1", soup)
       assert.equal(0, b.length);
+    });
+
+    it('should be OK with child combinator', function() {
+      var data = `
+      <div>
+        <span class="c" id="level1">
+          <div class="c" id="level2">
+          </div>
+        </span>
+      </div>
+      `
+      var ss = new SoupSelector(new JSSoupAdapter());
+      var soup = new JSSoup(data);
+      var b = ss.select("div > .c", soup)
+      assert.equal(1, b.length);
+      assert.equal("level1", b[0].attrs.id);
+    });
+
+    it('should be OK with next sibling combinator', function() {
+      var ss = new SoupSelector(new JSSoupAdapter());
+      var soup = new JSSoup(data);
+      var b = ss.select("span#id1 + *", soup)
+      assert.equal(1, b.length);
+      assert.equal("Two", b[0].text);
+    });
+
+    it('should be OK with next sibling combinator', function() {
+      var ss = new SoupSelector(new JSSoupAdapter());
+      var soup = new JSSoup(data);
+      var b = ss.select("span#id1 + *", soup)
+      assert.equal(1, b.length);
+      assert.equal("Two", b[0].text);
+    });
+
+    it('should be OK with subsequent sibling combinator', function() {
+      var ss = new SoupSelector(new JSSoupAdapter());
+      var soup = new JSSoup(data);
+      var b = ss.select("span#id1 ~ .four", soup)
+      assert.equal(3, b.length);
+      assert.equal("Two", b[0].text);
+      assert.equal("Three", b[1].text);
+      assert.equal("One Two Three", b[2].text);
     });
   });
 });

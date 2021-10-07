@@ -13,7 +13,6 @@ export default class Selector {
   select(expression, element) {
     // handle groups of selectors
     var expressions = this.groupSelectorExpressionSplit(expression)  
-    console.log(expressions)
     var selectedElements = [] 
     expressions.forEach(e => {
       selectedElements = selectedElements.concat(this.nonGroupSelect(e, element))
@@ -23,8 +22,6 @@ export default class Selector {
 
   nonGroupSelect(expression, element) {
     expression = expression.trim()
-    console.log("nonGroupSelect")
-    console.log(expression)
     var selectedElements = []
     // get all descendants as candidates
     var candidates = this.adapter.descendants(element);
@@ -67,7 +64,6 @@ export default class Selector {
   }
 
   combinatorSlice(expr, letter, candidates) {
-    console.log("combinatorSlice:", expr, letter)
     expr = expr.trim()
     var selected = []
     candidates.forEach(c => {
@@ -92,7 +88,6 @@ export default class Selector {
         candidates = selected;
         break;
     }
-    console.log("selected:", selected.length, "candidates:", candidates.length)
     return candidates 
   }
 
@@ -111,7 +106,6 @@ class SimpleSelector {
 
   match(expression, element) {
     var expressions = this.atomExpressionSplit(expression);
-    console.log(expressions)
     var candidates = []
     var isMatch = true;
     for (var i = 0; i < expressions.length; ++i) {
@@ -119,10 +113,6 @@ class SimpleSelector {
       if (!isMatch) {
         break;
       }
-    }
-  
-    if (isMatch) {
-      console.log("************!!!", element.name, element.attrs, isMatch)
     }
     return isMatch;
   }
@@ -187,7 +177,7 @@ class UniversalSelector extends AtomSelector {
   }
 
   match(element) {
-    return this.adapter.isValidElement(element)
+    return this.adapter.isTagElement(element)
   }
 } 
 
@@ -197,7 +187,7 @@ class TypeSelector extends AtomSelector {
   }
  
   match(element) {
-    if (!this.adapter.isValidElement(element)) return false;
+    if (!this.adapter.isTagElement(element)) return false;
     return this.expression == this.adapter.name(element);
   }
 }
@@ -229,7 +219,7 @@ class AttributeSelector extends AtomSelector {
   }
 
   match(element) {
-    if (!this.adapter.isValidElement(element)) return false;
+    if (!this.adapter.isTagElement(element)) return false;
     if (this.val == null) {
       var attrs = this.adapter.attributes(element);
       if (!attrs) return false
@@ -254,7 +244,7 @@ class ClassSelector extends AtomSelector {
   }
 
   match(element) {
-    if (!this.adapter.isValidElement(element)) return false;
+    if (!this.adapter.isTagElement(element)) return false;
     var c = this.adapter.attributes(element).class;
     if (!c) return false;
     var classes = c.split(" ")
@@ -275,7 +265,7 @@ class IDSelector extends AtomSelector {
   }
 
   match(element) {
-    if (!this.adapter.isValidElement(element)) return false;
+    if (!this.adapter.isTagElement(element)) return false;
     //TODO: ID validation
     return this.expression == this.adapter.attributes(element).id;
   }
@@ -288,7 +278,7 @@ class PseudoClassSelector extends AtomSelector {
   }
 
   match(element) {
-    if (!this.adapter.isValidElement(element)) return false;
+    if (!this.adapter.isTagElement(element)) return false;
     //return expression == adapter.name(element);
   }
 

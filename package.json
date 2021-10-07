@@ -12,7 +12,7 @@
     "init": "mkdir dist && mkdir dist/lib",
     "clean": "rm -rf dist",
     "prebuild": "npm run clean && npm run init",
-    "build": "babel ./src/*.js -d dist/lib"
+    "build": "babel ./src/**  -d dist/lib"
   },
   "author": "Liyun Xiu <chishui2@gmail.com>",
   "license": "MIT",

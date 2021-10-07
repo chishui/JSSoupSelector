@@ -23,7 +23,7 @@ export default class Combinator {
   nextSibling(elements) {
     var siblings = []
     elements.forEach(e => {
-      siblings.append(this.adapter.nextSibling(e))
+      siblings.push(this.adapter.nextSibling(e))
     })
     return siblings; 
   }

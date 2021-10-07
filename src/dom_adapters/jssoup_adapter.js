@@ -1,24 +1,23 @@
 
+// This is a dom element access adapter for JSSoup
 export default class JSSoupAdapter {
-  
-  findAll(domElement, tagName) {
-    return domElement.findAll(tagName);
-  }
 
   descendants(domElement) {
-    return domElement.descendants
+    return domElement.descendants.filter(this.isTagElement)
   }
   
   children(domElement) {
-    return domElement.contents;
+    return domElement.contents.filter(this.isTagElement)
   }
   
   nextSibling(domElement) {
-    return domElement.nextSibling;
+    var nextSiblings = this.nextSiblings(domElement);
+    if (nextSiblings.length > 0) return nextSiblings[0];
+    return null;
   }
 
   nextSiblings(domElement) {
-    return domElement.nextSiblings;
+    return domElement.nextSiblings.filter(this.isTagElement);
   }
 
   elementName(domElement) {
@@ -33,7 +32,7 @@ export default class JSSoupAdapter {
     return domElement.name
   }
   
-  isValidElement(domElement) {
+  isTagElement(domElement) {
     return domElement.constructor.name == "SoupTag"
   }
 }
