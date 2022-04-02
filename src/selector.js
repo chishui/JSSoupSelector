@@ -1,194 +1,106 @@
 import Combinator from './combinator';
 import UnsupportedException from './unsupported_exception';
+import {Tokenizer} from './tokenizer.js'
+import Parser from './parser.js'
+
+// Whitespace
+const WHITESPACE = /(?:[ \t]|(?:\r\n|(?!\r\n)[\n\f\r]))/
+const HEX_DIGIT = /[A-Fa-f0-9]/
+// CSS escapes
+//const CSS_ESCAPES = `(?:\\(?:${HEX_DIGIT}{1,6}${WHITESPACE}?|[^\r\n\f]|$))`
+const CSS_ESCAPES = /(?:\\(?:[A-Fa-f0-9]{1,6}(?:[ \t]|(?:\r\n|(?!\r\n)[\n\f\r]))?|[^\r\n\f]|$))/
+//const IDENTIFIER = `(?:(?:-?(?:[^\x00-\x2f\x30-\x40\x5B-\x5E\x60\x7B-\x9f]|${CSS_ESCAPES})+|--)(?:[^\x00-\x2c\x2e\x2f\x3A-\x40\x5B-\x5E\x60\x7B-\x9f]|${CSS_ESCAPES})*)`
+const IDENTIFIER = /(?:(?:-?(?:[^\x00-\x2f\x30-\x40\x5B-\x5E\x60\x7B-\x9f]|(?:\\(?:[A-Fa-f0-9]{1,6}(?:[ \t]|(?:\r\n|(?!\r\n)[\n\f\r]))?|[^\r\n\f]|$)))+|--)(?:[^\x00-\x2c\x2e\x2f\x3A-\x40\x5B-\x5E\x60\x7B-\x9f]|(?:\\(?:[A-Fa-f0-9]{1,6}(?:[ \t]|(?:\r\n|(?!\r\n)[\n\f\r]))?|[^\r\n\f]|$)))*)/
 
 export default class Selector {
   
   constructor(adapter) {
     this.adapter = adapter;
-    this.simpleSelector = new SimpleSelector(adapter);
     this.combinator = new Combinator(adapter)
+    this.tokenizer = new Tokenizer()
+    this.parser = new Parser()
   }
 
-
-  select(expression, element) {
-    // handle groups of selectors
-    var expressions = this.groupSelectorExpressionSplit(expression)  
-    var selectedElements = [] 
-    expressions.forEach(e => {
-      selectedElements = selectedElements.concat(this.nonGroupSelect(e, element))
-    }) 
-    return selectedElements
+  select(exp, element) {
+    var tokens = this.tokenizer.getTokens(exp);
+    // console.debug(tokens)
+    var selectors = this.parser.parseProgram(tokens)
+    return this.parserSelect(selectors, element)  
   }
 
-  nonGroupSelect(expression, element) {
-    expression = expression.trim()
-    var selectedElements = []
-    // get all descendants as candidates
-    var candidates = this.adapter.descendants(element);
-    var start = 0;
-    var idx = 0;
-    var pivotLetter = 0;
-    while (idx < expression.length) {
-      var c = expression[idx]
-      if (c == '>') {
-          candidates = this.combinatorSlice(expression.slice(start, idx), expression[idx], candidates)
-          pivotLetter = expression[idx];
-          start = idx + 1;
-      } else if (c == '+') {
-          candidates = this.combinatorSlice(expression.slice(start, idx), expression[idx], candidates)
-          pivotLetter = expression[idx];
-          start = idx + 1;
-      } else if (c == '~') {
-          candidates = this.combinatorSlice(expression.slice(start, idx), expression[idx], candidates)
-          pivotLetter = expression[idx];
-          start = idx + 1;
-      } else if (c == '[' || c == '(') {
-          pivotLetter = expression[idx]
-      } else if (c == ']' || c == ')') {
-          pivotLetter = 0;
-      } else if (c.match(/\s/) && expression[idx+1].match(/[a-zA-Z#.\[:]/)) { 
-          if (pivotLetter == 0) {
-            candidates = this.combinatorSlice(expression.slice(start, idx), expression[idx], candidates)
-            pivotLetter = expression[idx];
-            start = idx + 1;
-          } else if ("[(".indexOf(pivotLetter) >= 0) {
-            pivotLetter = 0; 
-          }
-      }
-      ++idx;
+  parserSelect(obj, elements) {
+    if (Array.isArray(elements)) {
+      // console.debug('before: parserSelect', obj.type, 'candidate size: ', elements.length)
     }
-    if (start < idx && expression.slice(start, idx).trim().length > 0) {
-      candidates = this.combinatorSlice(expression.slice(start, idx), 0, candidates) 
-    }
-    return candidates;
-  }
-
-  combinatorSlice(expr, letter, candidates) {
-    expr = expr.trim()
     var selected = []
-    candidates.forEach(c => {
-      if (this.simpleSelector.match(expr, c)) {
-        selected.push(c);
+    if (obj.type == 'merge') {
+      // preprocess to get all descendants
+      var allCandidates = this.combinator.descendant([elements]);
+      var selectedSet = new Set();
+      obj.params.forEach(param => {
+        var arr = this.parserSelect(param, allCandidates)
+        arr.forEach(a => selectedSet.add(a));
+      });
+      selected = Array.from(selectedSet)
+    } else if (obj.type == 'group') {
+      selected = elements;
+      obj.params.forEach(param => {
+        selected = this.parserSelect(param, selected) 
+      });
+    } else if (obj.type == 'descendant') {
+      selected = this.combinatorBinary(this.combinator.descendant.bind(this), elements, obj.params[0], obj.params[1])
+    } else if (obj.type == 'child') {
+      selected = this.combinatorBinary(this.combinator.child.bind(this), elements, obj.params[0], obj.params[1])
+    } else if (obj.type == 'nextSibling') {
+      selected = this.combinatorBinary(this.combinator.nextSibling.bind(this), elements, obj.params[0], obj.params[1])
+    } else if (obj.type == 'subsequentSibling') {
+      selected = this.combinatorBinary(this.combinator.subsequentSibling.bind(this), elements, obj.params[0], obj.params[1])
+    } else if (obj.type == 'id') {
+      selected = this.atomSelectorMatcher(new IDSelector(this.adapter), obj.value, elements);
+    } else if (obj.type == 'class') {
+      selected = this.atomSelectorMatcher(new ClassSelector(this.adapter), obj.value, elements);
+    } else if (obj.type == 'identifier') {
+      selected = this.atomSelectorMatcher(new IdentifierSelector(this.adapter), obj.value, elements);
+    } else if (obj.type == 'global') {
+      selected = elements;
+    }
+    //console.debug('after: parserSelect', obj.type, 'candidate size: ', selected.length)
+    //console.debug(selected)
+    return selected;
+  }
+
+  atomSelectorMatcher(selector, value, elements) {
+    var selected = []
+    elements.forEach(e => {
+      if (selector.match(e, value)) {
+        selected.push(e);
       }
     })
-    switch(letter) {
-      case '>':
-        candidates = this.combinator.child(selected);
-        break;
-      case '+':
-        candidates = this.combinator.nextSibling(selected);
-        break;
-      case '~':
-        candidates = this.combinator.subsequentSibling(selected);
-        break;
-      case ' ':
-        candidates = this.combinator.descendant(selected);
-        break;
-      default:
-        candidates = selected;
-        break;
-    }
-    return candidates 
+    return selected;
   }
 
-  groupSelectorExpressionSplit(expression) {
-    return expression.split(",");
-  }
-  
-}
-
-// The simple selector here is the "sequence of simple selectors" defined in CSS3 https://www.w3.org/TR/selectors-3/#selector-syntax
-class SimpleSelector {
-  
-  constructor(adapter) {
-    this.adapter = adapter;
-  }
-
-  match(expression, element) {
-    var expressions = this.atomExpressionSplit(expression);
-    var candidates = []
-    var isMatch = true;
-    for (var i = 0; i < expressions.length; ++i) {
-      isMatch = expressions[i].match(element);
-      if (!isMatch) {
-        break;
-      }
-    }
-    return isMatch;
-  }
-
-  atomExpressionSplit(expression) {
-    var expressions = []
-    var last = 0;
-    for (var i = 0; i < expression.length; ++i) {
-      var c = expression.charAt(i)
-      if (c == '*') {//universal selector
-        expressions.push(new UniversalSelector(this.adapter, expr));
-      } else if (c.match(/[a-zA-Z]/g)) {
-        var expr = this.getNext(expression, i)
-        expressions.push(new TypeSelector(this.adapter, expr))
-        i = i + expr.length - 1
-      } else if (c == '[') {// beginning of atrribute selector
-        var end = expression.indexOf("]", i);
-        expressions.push(new AttributeSelector(this.adapter, expression.slice(i, end + 1)));
-        i = end;
-      } else if (c == ':') {// pseudo-class selector
-        var sub = expression.slice(i);
-        var end = sub.search(/\W/);
-        if (sub[end] == '(') {
-          end = sub.indexOf(")", end)
-        }
-        expressions.push(new PseudoClassSelector(this.adapter, expression.slice(i, i + end).trim()))
-        i = end - 1
-      } else if (c == '.') {// class selector
-        var expr = this.getNext(expression, i)
-        expressions.push(new ClassSelector(this.adapter, expr))
-        i = i + expr.length - 1
-      } else if (c == '#') {// ID selector
-        var expr = this.getNext(expression, i)
-        expressions.push(new IDSelector(this.adapter, expr))
-        i = i + expr.length - 1
-      }
-    }
-    return expressions
-  }
-  
-  getNext(expression, start) {
-    var sub = expression.slice(start + 1);
-    var end = sub.search(/\W/g); // end is index of sub
-    if (end == -1) {
-      end = sub.length
-    }
-    return expression.slice(start, start + end + 1).trim()
+  combinatorBinary(func, elements,  obj1, obj2) {
+    var selected = this.parserSelect(obj1, elements);
+    //console.debug("hahah", selected)
+    selected = func(selected);
+    return this.parserSelect(obj2, selected);
   }
 }
 
 // The AtomSelector is the "simple selector" defined in CSS3 https://www.w3.org/TR/selectors-3/#selectors
 class AtomSelector {
-  constructor(adapter, expression) {
+  constructor(adapter) {
     this.adapter = adapter;
-    this.expression = expression;
   }
 } 
 
-class UniversalSelector extends AtomSelector {
-  constructor(adapter, expression) {
-    super(adapter, expression)
-  }
-
-  match(element) {
-    return this.adapter.isTagElement(element)
-  }
-} 
-
-class TypeSelector extends AtomSelector {
-  constructor(adapter, expression) {
-    super(adapter, expression)
+class IdentifierSelector extends AtomSelector {
+  constructor(adapter) {
+    super(adapter)
   }
  
-  match(element) {
-    if (!this.adapter.isTagElement(element)) return false;
-    return this.expression == this.adapter.name(element);
+  match(element, value) {
+    return value == this.adapter.name(element);
   }
 }
 
@@ -233,52 +145,34 @@ class AttributeSelector extends AtomSelector {
 }
 
 class ClassSelector extends AtomSelector {
-  constructor(adapter, expression) {
-    super(adapter, expression)
-    this.processExpression(expression)
+  constructor(adapter) {
+    super(adapter)
   }
 
-  processExpression(expression) {
-    var idx = expression.indexOf('.');
-    this.expression = expression.slice(idx + 1)
-  }
-
-  match(element) {
-    if (!this.adapter.isTagElement(element)) return false;
+  match(element, value) {
     var c = this.adapter.attributes(element).class;
     if (!c) return false;
     var classes = c.split(" ")
-    return classes.indexOf(this.expression) >= 0;
+    return classes.indexOf(value) >= 0;
   }
-
 }
 
 class IDSelector extends AtomSelector {
-  constructor(adapter, expression) {
-    super(adapter, expression)
-    this.processExpression(expression)
+  constructor(adapter) {
+    super(adapter)
   }
 
-  processExpression(expression) {
-    var idx = expression.indexOf('#');
-    this.expression = expression.slice(idx + 1)
+  match(element, value) {
+    return value == this.adapter.attributes(element).id;
   }
-
-  match(element) {
-    if (!this.adapter.isTagElement(element)) return false;
-    //TODO: ID validation
-    return this.expression == this.adapter.attributes(element).id;
-  }
-
 }
 
 class PseudoClassSelector extends AtomSelector {
-  constructor(adapter, expression) {
-    super(adapter, expression)
+  constructor(adapter) {
+    super(adapter)
   }
 
   match(element) {
-    if (!this.adapter.isTagElement(element)) return false;
     //return expression == adapter.name(element);
   }
 
